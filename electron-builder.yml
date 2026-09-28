@@ -1,0 +1,121 @@
+# Configuração do instalador (electron-builder).
+# Assinatura e notarização NÃO ficam aqui: ficam em build/signing.env (veja build/signing.env.example
+# e BUILD.md). O script scripts/build.js carrega aquele arquivo e passa tudo por variáveis de ambiente.
+
+appId: io.macrineutecnologia.serviceprint
+productName: Service Print
+copyright: Copyright © 2026 Macrineu Tecnologia
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - assets/**/*
+  - package.json
+  - "!**/*.map"
+
+asarUnpack:
+  - assets/mac/**
+  - node_modules/pdfjs-dist/**
+
+# macOS sem Developer ID: assina o .app ad-hoc com bundle id + entitlements (senão o macOS não associa a
+# permissão de Bluetooth ao app e o helper btprint não conecta). Ver scripts/afterPack.js.
+afterPack: scripts/afterPack.js
+
+protocols:
+  - name: Service Print
+    schemes:
+      - serviceprint
+
+# ---------------------------------------------------------------- macOS
+mac:
+  category: public.app-category.utilities
+  icon: build/icon.png
+  # Binário universal (Apple Silicon + Intel): um único .dmg/.pkg. Também evita a corrida do target pkg,
+  # que usa o mesmo arquivo intermediário quando gera duas arquiteturas ao mesmo tempo.
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: pkg
+      arch: [universal]
+  # Assinatura: identidade vem de CSC_NAME / CSC_LINK (signing.env). Sem identidade o build sai sem assinar.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # Helper nativo fora do asar precisa ser assinado junto, senão o Gatekeeper barra o app inteiro.
+  binaries:
+    - Contents/Resources/app.asar.unpacked/assets/mac/btprint
+  # Notariza quando APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID (ou APPLE_API_KEY*) estiverem
+  # definidos; caso contrário o electron-builder só avisa e pula.
+  notarize: true
+  extendInfo:
+    NSBluetoothAlwaysUsageDescription: O Service Print usa Bluetooth para enviar impressões a impressoras térmicas pareadas.
+    NSLocalNetworkUsageDescription: O Service Print usa a rede local para enviar impressões a impressoras de rede.
+    LSMinimumSystemVersion: "11.0"
+
+dmg:
+  title: ${productName} ${version}
+  sign: false
+  icon: build/icon.png
+  iconSize: 110
+  window:
+    width: 560
+    height: 400
+  contents:
+    - { x: 150, y: 190, type: file }
+    - { x: 410, y: 190, type: link, path: /Applications }
+
+pkg:
+  # Assistente "passo a passo" do macOS. Assinado com "Developer ID Installer" quando disponível.
+  installLocation: /Applications
+  allowAnywhere: false
+  allowCurrentUserHome: false
+  allowRootDirectory: true
+  isRelocatable: false
+  overwriteAction: upgrade
+  welcome: build/pkg/welcome.html
+  conclusion: build/pkg/conclusion.html
+  license: build/license_pt.txt
+
+# ---------------------------------------------------------------- Windows
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+  # Certificado: WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD (arquivo .pfx) ou WIN_CERT_SUBJECT_NAME / WIN_CERT_SHA1
+  # (token USB / HSM), todos em signing.env. publisherName é preenchido pelo script a partir do certificado.
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+  verifyUpdateCodeSignature: false
+
+nsis:
+  # Instalador assistido (passo a passo), não one-click.
+  oneClick: false
+  perMachine: false            # pergunta: só para mim / para todos os usuários
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Service Print
+  runAfterFinish: true
+  installerLanguages: [pt_BR, en_US]
+  language: "1046"             # pt-BR
+  license: build/license_pt.txt
+  include: build/installer.nsh
+  uninstallDisplayName: ${productName} ${version}
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+  deleteAppDataOnUninstall: false
+
+# ---------------------------------------------------------------- Linux
+linux:
+  icon: build/icon.png
+  category: Utility
+  target:
+    - target: AppImage
+      arch: [x64]

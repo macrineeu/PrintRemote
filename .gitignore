@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.DS_Store
+build/signing.env
+build/certs/
+*.p12
+*.pfx
+*.p8
+build/icon.icns
+build/icon.ico
+build

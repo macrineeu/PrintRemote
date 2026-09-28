@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>service-print · render PDF</title>
+<script type="module">
+  // pdf.js roda AQUI, no renderer: precisa de canvas, que o main process não tem.
+  // Build "legacy": o build moderno usa Uint8Array.toHex, que o Chromium do Electron 33 não tem.
+  import * as pdfjs from '../node_modules/pdfjs-dist/legacy/build/pdf.mjs';
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url).href;
+
+  /**
+   * Desenha cada página com a LARGURA pedida (em pixels) e devolve PNGs em data URL.
+   * A altura acompanha a proporção da página — cupom NFC-e é uma página alta e estreita.
+   */
+  window.renderPdf = async function (base64, widthPx, maxPages) {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const task = pdfjs.getDocument({ data: bytes, isEvalSupported: false });
+    const doc = await task.promise;
+    const total = Math.min(doc.numPages, maxPages || 50);
+    const pages = [];
+    for (let n = 1; n <= total; n++) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const scale = widthPx / base.width;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+      pages.push({ png: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height, widthPt: base.width, heightPt: base.height });
+      page.cleanup();
+    }
+    const numPages = doc.numPages;
+    await task.destroy();
+    return { numPages, pages };
+  };
+  window.__pdfReady = true;
+</script>
+</head>
+<body></body>
+</html>

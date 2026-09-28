@@ -1,0 +1,29 @@
+{
+  "name": "service-print",
+  "version": "1.0.0",
+  "description": "Serviço local de impressão: recebe requests HTTP da web e imprime em impressoras do sistema",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "node scripts/build.js",
+    "build:mac": "node scripts/build.js --mac",
+    "build:win": "node scripts/build.js --win",
+    "build:linux": "node scripts/build.js --linux",
+    "build:mac:dir": "node scripts/build.js --mac --dir --unsigned",
+    "build:unsigned": "node scripts/build.js --unsigned",
+    "icon": "qlmanage -t -s 1024 -o build build/icon.svg && mv build/icon.svg.png build/icon.png"
+  },
+  "author": "Macrineu Tecnologia",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "pdfjs-dist": "^6.3.289"
+  },
+  "homepage": "https://macrineutecnologia.io"
+}

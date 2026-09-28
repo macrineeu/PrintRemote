@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Teste - cliente web do Service Print</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:720px;margin:32px auto;padding:0 16px}
+  label{display:block;margin-top:12px;font-weight:600}
+  input,select,textarea{width:100%;padding:8px;margin-top:4px;box-sizing:border-box}
+  textarea{height:140px;font-family:monospace}
+  button{margin-top:12px;padding:10px 16px;cursor:pointer}
+  pre{background:#f1f5f9;padding:12px;border-radius:6px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<h1>Cliente web de teste</h1>
+<p>Simula sua aplicação web chamando o serviço local de impressão.</p>
+
+<label>URL do serviço <input id="base" value="http://127.0.0.1:9100"></label>
+<label>Token (se configurado) <input id="token" placeholder="opcional"></label>
+<button id="health">GET /health</button>
+<button id="list">GET /printers</button>
+<button id="echo">POST /echo (simulação)</button>
+
+<label>Impressora <select id="printer"><option value="">(padrão do sistema)</option></select></label>
+<label>Conteúdo (texto; em impressora ESC/POS aceita tags [C] [R] [B] [BIG] [-] no início da linha) <textarea id="text">[C][B]MINHA LOJA
+[-]
+Pedido #1234
+Cliente: Fulano
+2x Item A ....... R$ 20,00
+1x Item B ....... R$ 15,00
+Total ........... R$ 35,00</textarea></label>
+<button id="print">POST /print</button>
+<button id="dry">POST /print (dryRun, não imprime)</button>
+
+<h3>RAW (etiquetas ZPL/PPLA, ESC/POS)</h3>
+<label>Destino
+  <select id="rawDest">
+    <option value="printer">Fila do sistema (select "Impressora" acima)</option>
+    <option value="host">Rede TCP (host abaixo)</option>
+    <option value="device">Porta serial / Bluetooth (device abaixo)</option>
+  </select>
+</label>
+<label>Host (rede) <input id="rawHost" placeholder="192.168.0.50"></label>
+<label>Device (serial) <input id="rawDevice" placeholder="/dev/tty.Bluetooth-Incoming-Port ou COM3"></label>
+<label>Formato <select id="rawFormat"><option>zpl</option><option>ppla</option><option>epl</option><option>escpos</option></select></label>
+<label>Comandos <textarea id="rawData">; Cabecalho de exemplo (linhas com ; sao removidas)
+; Etiqueta 60 x 40 mm @ 203 dpi
+
+^XA
+^PW480
+^LL320
+^LH0,0
+^FO20,20^A0N,30,30^FDProduto Teste^FS
+^FO20,70^BEN,80,Y,N^FD789100000001^FS
+^FO20,200^A0N,40,40^FDR$ 19,90^FS
+^PQ1
+^XZ</textarea></label>
+<button id="rawDry">POST /print/raw (dryRun)</button>
+<button id="raw">POST /print/raw</button>
+
+<h3>Deep link (serviceprint://)</h3>
+<label>ID do job <input id="jobId" value="ABC123"></label>
+<button id="deeplinkId">Abrir serviceprint://print/&lt;ID&gt;</button>
+<button id="deeplinkText">Abrir serviceprint://print?text=... (conteúdo acima)</button>
+<button id="deeplinkSim">Simular via POST /deeplink (sem protocolo)</button>
+<p id="deeplinkUrl" style="font-family:monospace;font-size:12px;word-break:break-all"></p>
+
+<h3>Resposta</h3>
+<pre id="out"></pre>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const out = (v) => ($('out').textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+
+  function headers() {
+    const h = { 'Content-Type': 'application/json' };
+    if ($('token').value) h['X-Print-Token'] = $('token').value;
+    return h;
+  }
+
+  async function call(path, opts = {}) {
+    try {
+      const r = await fetch($('base').value + path, { headers: headers(), ...opts });
+      const j = await r.json();
+      out(j);
+      return j;
+    } catch (err) {
+      out('Erro de conexão: ' + err.message + '\nO serviço está rodando?');
+    }
+  }
+
+  const jobBody = (extra = {}) =>
+    JSON.stringify({ printer: $('printer').value || undefined, text: $('text').value, ...extra });
+
+  function rawBody(extra = {}) {
+    const b = { data: $('rawData').value, format: $('rawFormat').value, ...extra };
+    const dest = $('rawDest').value;
+    if (dest === 'printer') b.printer = $('printer').value || undefined;
+    if (dest === 'host') b.host = $('rawHost').value;
+    if (dest === 'device') b.device = $('rawDevice').value;
+    return JSON.stringify(b);
+  }
+  $('rawDry').onclick = () => call('/print/raw', { method: 'POST', body: rawBody({ dryRun: true }) });
+  $('raw').onclick = () => call('/print/raw', { method: 'POST', body: rawBody() });
+
+  $('health').onclick = () => call('/health');
+  $('echo').onclick = () =>
+    call('/echo?origem=teste', { method: 'POST', body: jobBody({ qualquerCampo: 123, meta: { pedido: 'ABC123' } }) });
+  $('dry').onclick = () => call('/print', { method: 'POST', body: jobBody({ dryRun: true }) });
+  $('deeplinkSim').onclick = () => {
+    const url = `serviceprint://print/${encodeURIComponent($('jobId').value)}`;
+    $('deeplinkUrl').textContent = url;
+    call('/deeplink', { method: 'POST', body: JSON.stringify({ url }) });
+  };
+  $('list').onclick = async () => {
+    const j = await call('/printers');
+    if (j && j.ok) {
+      $('printer').innerHTML = '<option value="">(padrão do sistema)</option>';
+      j.printers.forEach((p) => {
+        const o = document.createElement('option');
+        o.value = p.name;
+        o.textContent = p.displayName || p.name;
+        $('printer').appendChild(o);
+      });
+    }
+  };
+  function openDeepLink(url) {
+    $('deeplinkUrl').textContent = url;
+    window.location.href = url; // ou window.open(url) / <a href="serviceprint://...">
+  }
+  $('deeplinkId').onclick = () => {
+    const printer = $('printer').value ? '?printer=' + encodeURIComponent($('printer').value) : '';
+    openDeepLink(`serviceprint://print/${encodeURIComponent($('jobId').value)}${printer}`);
+  };
+  $('deeplinkText').onclick = () => {
+    const q = new URLSearchParams({ text: $('text').value });
+    if ($('printer').value) q.set('printer', $('printer').value);
+    openDeepLink(`serviceprint://print?${q}`);
+  };
+
+  $('print').onclick = () =>
+    call('/print', {
+      method: 'POST',
+      body: JSON.stringify({ printer: $('printer').value || undefined, text: $('text').value }),
+    });
+</script>
+</body>
+</html>
